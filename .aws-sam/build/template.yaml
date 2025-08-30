@@ -1,0 +1,273 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: API Gateway + WAF per-IP throttle + Lambda Authorizer (App Attest) +
+  DynamoDB nonces
+Globals:
+  Function:
+    Runtime: nodejs20.x
+    MemorySize: 256
+    Timeout: 15
+    Tracing: Active
+    Environment:
+      Variables:
+        APP_INSTALLS_TABLE:
+          Ref: AppInstallsTable
+        NONCES_TABLE:
+          Ref: NoncesTable
+        OPENAI_API_KEY: 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
+  Api:
+    EndpointConfiguration: REGIONAL
+    TracingEnabled: true
+    Cors:
+      AllowMethods: '''GET,POST,OPTIONS'''
+      AllowHeaders: '''*'''
+      AllowOrigin: '''*'''
+Parameters:
+  WafPerIpLimit:
+    Type: Number
+    Default: 1000
+    Description: Requests per 5-min window per IP (global rule)
+  StageName:
+    Type: String
+    Default: prod
+Resources:
+  AppInstallsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+      - AttributeName: keyId
+        AttributeType: S
+      KeySchema:
+      - AttributeName: keyId
+        KeyType: HASH
+      SSESpecification:
+        SSEEnabled: true
+      TableName:
+        Fn::Sub: ${AWS::StackName}-AppInstalls
+  NoncesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+      - AttributeName: nonce
+        AttributeType: S
+      KeySchema:
+      - AttributeName: nonce
+        KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      SSESpecification:
+        SSEEnabled: true
+      TableName:
+        Fn::Sub: ${AWS::StackName}-Nonces
+  NonceFn:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: NonceFn
+      Handler: src/nonce/index.handler
+      Policies:
+      - DynamoDBCrudPolicy:
+          TableName:
+            Ref: NoncesTable
+    Metadata:
+      SamResourceId: NonceFn
+  RegisterFn:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: RegisterFn
+      Handler: src/register/index.handler
+      Policies:
+      - DynamoDBCrudPolicy:
+          TableName:
+            Ref: AppInstallsTable
+      Environment:
+        Variables:
+          TEAM_ID: RR25B7NB9X
+          BUNDLE_ID: com.ridleytech.SteadyStreak
+          ALLOW_DEV: 'true'
+    Metadata:
+      SamResourceId: RegisterFn
+  AuthorizerFn:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: AuthorizerFn
+      Handler: src/authorizer/index.handler
+      Policies:
+      - DynamoDBReadPolicy:
+          TableName:
+            Ref: AppInstallsTable
+      - DynamoDBCrudPolicy:
+          TableName:
+            Ref: NoncesTable
+      Environment:
+        Variables:
+          TEAM_ID: RR25B7NB9X
+          BUNDLE_ID: com.ridleytech.SteadyStreak
+          ALLOW_DEV: 'true'
+    Metadata:
+      SamResourceId: AuthorizerFn
+  ProtectedFn:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ProtectedFn
+      Handler: src/protected/index.handler
+    Metadata:
+      SamResourceId: ProtectedFn
+  RestApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name:
+        Fn::Sub: ${AWS::StackName}-api
+      StageName:
+        Ref: StageName
+      DefinitionBody:
+        openapi: 3.0.1
+        info:
+          title: App Attest API
+          version: '1.0'
+        paths:
+          /nonce:
+            get:
+              x-amazon-apigateway-integration:
+                type: aws_proxy
+                httpMethod: POST
+                uri:
+                  Fn::Sub: arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${NonceFn.Arn}/invocations
+          /register:
+            post:
+              x-amazon-apigateway-integration:
+                type: aws_proxy
+                httpMethod: POST
+                uri:
+                  Fn::Sub: arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${RegisterFn.Arn}/invocations
+          /protected:
+            post:
+              security:
+              - AppAttestAuthorizer: []
+              x-amazon-apigateway-integration:
+                type: aws_proxy
+                httpMethod: POST
+                uri:
+                  Fn::Sub: arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ProtectedFn.Arn}/invocations
+        components:
+          securitySchemes:
+            AppAttestAuthorizer:
+              type: apiKey
+              name: X-AppAttest-Assertion
+              in: header
+              x-amazon-apigateway-authorizer:
+                type: request
+                authorizerUri:
+                  Fn::Sub: arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${AuthorizerFn.Arn}/invocations
+                identitySource: method.request.header.X-AppAttest-KeyId, method.request.header.X-AppAttest-Assertion,
+                  method.request.header.X-Req-Nonce, method.request.header.X-Req-Timestamp
+                authorizerResultTtlInSeconds: 0
+  PermNonceInvokeByApi:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName:
+        Ref: NonceFn
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn:
+        Fn::Sub: arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${RestApi}/*/*/nonce
+  PermRegisterInvokeByApi:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName:
+        Ref: RegisterFn
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn:
+        Fn::Sub: arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${RestApi}/*/*/register
+  PermProtectedInvokeByApi:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName:
+        Ref: ProtectedFn
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn:
+        Fn::Sub: arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${RestApi}/*/*/protected
+  PermAuthorizerInvokeByApi:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName:
+        Ref: AuthorizerFn
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn:
+        Fn::Sub: arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${RestApi}/authorizers/*
+  WebACL:
+    Type: AWS::WAFv2::WebACL
+    Properties:
+      Name:
+        Fn::Sub: ${AWS::StackName}-waf
+      Scope: REGIONAL
+      DefaultAction:
+        Allow: {}
+      VisibilityConfig:
+        CloudWatchMetricsEnabled: true
+        MetricName: waf-api
+        SampledRequestsEnabled: true
+      Rules:
+      - Name: PerIpGlobalLimit
+        Priority: 1
+        Statement:
+          RateBasedStatement:
+            Limit:
+              Ref: WafPerIpLimit
+            AggregateKeyType: IP
+        Action:
+          Block: {}
+        VisibilityConfig:
+          CloudWatchMetricsEnabled: true
+          MetricName: per-ip-global
+          SampledRequestsEnabled: true
+      - Name: PerIpProtectedTight
+        Priority: 2
+        Statement:
+          RateBasedStatement:
+            Limit: 300
+            AggregateKeyType: IP
+            ScopeDownStatement:
+              AndStatement:
+                Statements:
+                - ByteMatchStatement:
+                    FieldToMatch:
+                      UriPath: {}
+                    PositionalConstraint: EXACTLY
+                    SearchString: /protected
+                    TextTransformations:
+                    - Priority: 0
+                      Type: NONE
+                - ByteMatchStatement:
+                    FieldToMatch:
+                      Method: {}
+                    PositionalConstraint: EXACTLY
+                    SearchString: POST
+                    TextTransformations:
+                    - Priority: 0
+                      Type: NONE
+        Action:
+          Block: {}
+        VisibilityConfig:
+          CloudWatchMetricsEnabled: true
+          MetricName: per-ip-protected
+          SampledRequestsEnabled: true
+  WebACLAssociation:
+    Type: AWS::WAFv2::WebACLAssociation
+    Properties:
+      ResourceArn:
+        Fn::Sub: arn:aws:apigateway:${AWS::Region}::/restapis/${RestApi}/stages/${StageName}
+      WebACLArn:
+        Fn::GetAtt:
+        - WebACL
+        - Arn
+Outputs:
+  ApiBaseUrl:
+    Value:
+      Fn::Sub: https://${RestApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}
+    Description: Base URL of the API

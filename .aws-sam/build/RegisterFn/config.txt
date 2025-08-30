@@ -1,0 +1,27 @@
+brew install mkcert nss
+mkcert -install
+mkcert localhost 127.0.0.1
+
+Created a new certificate valid for the following names 📜
+
+- "localhost"
+- "127.0.0.1"
+
+The certificate is at "./localhost+1.pem" and the key at "./localhost+1-key.pem" ✅
+
+It will expire on 21 November 2027 🗓
+
+# mkcert filenames:
+
+sam local start-api --env-vars env.json \
+ --ssl \
+ --ssl-cert localhost+1.pem \
+ --ssl-key localhost+1-key.pem \
+ --host 127.0.0.1 --port 3000
+
+sam local start-api --env-vars env.json --debug
+
+ls -l "$HOME/.docker/run/docker.sock"
+/Users/rr/.docker/run/docker.sock
+
+export DOCKER_HOST=unix://$HOME/.docker/run/docker.sock

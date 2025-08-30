@@ -1,0 +1,6 @@
+{
+  "body": "{}",
+  "headers": {},
+  "httpMethod": "POST",
+  "path": "/protected"
+}

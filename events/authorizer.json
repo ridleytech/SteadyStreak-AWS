@@ -1,0 +1,12 @@
+{
+  "headers": {
+    "X-AppAttest-KeyId": "demo-key-123",
+    "X-AppAttest-Assertion": "dummyAssertion",
+    "X-Req-Nonce": "dummyNonce",
+    "X-Req-Timestamp": "1734885000"
+  },
+  "requestContext": { "httpMethod": "POST", "path": "/protected" },
+  "body": "{}",
+  "isBase64Encoded": false,
+  "methodArn": "arn:aws:execute-api:local/dev/POST/protected"
+}

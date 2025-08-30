@@ -1,0 +1,171 @@
+
+
+Configuring SAM deploy
+======================
+
+        Looking for config file [samconfig.toml] :  Not found
+
+        Setting default arguments for 'sam deploy'
+        =========================================
+        Stack Name [steadystreak]: 
+        AWS Region [us-west-2]: 
+        Parameter WafPerIpLimit [1000]: 300
+        Parameter StageName [prod]: 
+        #Shows you resources changes to be deployed and require a 'Y' to initiate deploy
+        Confirm changes before deploy [y/N]: y
+        #SAM needs permission to be able to create roles to connect to the resources in your template
+        Allow SAM CLI IAM role creation [Y/n]: y
+        #Preserves the state of previously provisioned resources when an operation fails
+        Disable rollback [y/N]: y
+        Save arguments to configuration file [Y/n]: y
+        SAM configuration file [samconfig.toml]: 
+        SAM configuration environment [default]: 
+
+        Looking for resources needed for deployment:
+        Creating the required resources...
+        Successfully created!
+
+        Managed S3 bucket: aws-sam-cli-managed-default-samclisourcebucket-6ejn2ixmxg1e
+        Auto resolution of buckets can be turned off by setting resolve_s3=False
+        To use a specific S3 bucket, set --s3-bucket=<bucket_name>
+        Above settings can be stored in samconfig.toml
+
+        Saved arguments to config file
+        Running 'sam deploy' for future deployments will use the parameters saved above.
+        The above parameters can be changed by modifying samconfig.toml
+        Learn more about samconfig.toml syntax at 
+        https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/serverless-sam-cli-config.html
+
+        Uploading to steadystreak/58548a2f9380a45d583dedc5c90f6067  2904866 / 2904866  (100.00%)
+                                                                                                                        
+        File with same data already exists at steadystreak/58548a2f9380a45d583dedc5c90f6067, skipping upload            
+                                                                                                                        
+        File with same data already exists at steadystreak/58548a2f9380a45d583dedc5c90f6067, skipping upload            
+                                                                                                                        
+        File with same data already exists at steadystreak/58548a2f9380a45d583dedc5c90f6067, skipping upload            
+
+        Deploying with following values
+        ===============================
+        Stack name                   : steadystreak
+        Region                       : us-west-2
+        Confirm changeset            : True
+        Disable rollback             : True
+        Deployment s3 bucket         : aws-sam-cli-managed-default-samclisourcebucket-6ejn2ixmxg1e
+        Capabilities                 : ["CAPABILITY_IAM"]
+        Parameter overrides          : {"WafPerIpLimit": "300", "StageName": "prod"}
+        Signing Profiles             : {}
+
+Initiating deployment
+=====================
+
+        Uploading to steadystreak/6f4e95553dabff5ff77f84587c040d7a.template  8802 / 8802  (100.00%)
+
+
+Waiting for changeset to be created..
+
+CloudFormation stack changeset
+---------------------------------------------------------------------------------------------------------------------
+Operation                     LogicalResourceId             ResourceType                  Replacement                 
+---------------------------------------------------------------------------------------------------------------------
++ Add                         AppInstallsTable              AWS::DynamoDB::Table          N/A                         
++ Add                         AuthorizerFnRole              AWS::IAM::Role                N/A                         
++ Add                         AuthorizerFn                  AWS::Lambda::Function         N/A                         
++ Add                         NonceFnRole                   AWS::IAM::Role                N/A                         
++ Add                         NonceFn                       AWS::Lambda::Function         N/A                         
++ Add                         NoncesTable                   AWS::DynamoDB::Table          N/A                         
++ Add                         PermAuthorizerInvokeByApi     AWS::Lambda::Permission       N/A                         
++ Add                         PermNonceInvokeByApi          AWS::Lambda::Permission       N/A                         
++ Add                         PermProtectedInvokeByApi      AWS::Lambda::Permission       N/A                         
++ Add                         PermRegisterInvokeByApi       AWS::Lambda::Permission       N/A                         
++ Add                         ProtectedFnRole               AWS::IAM::Role                N/A                         
++ Add                         ProtectedFn                   AWS::Lambda::Function         N/A                         
++ Add                         RegisterFnRole                AWS::IAM::Role                N/A                         
++ Add                         RegisterFn                    AWS::Lambda::Function         N/A                         
++ Add                         RestApiDeployment2472c0be23   AWS::ApiGateway::Deployment   N/A                         
++ Add                         RestApiStage                  AWS::ApiGateway::Stage        N/A                         
++ Add                         RestApi                       AWS::ApiGateway::RestApi      N/A                         
++ Add                         WebACLAssociation             AWS::WAFv2::WebACLAssociati   N/A                         
+                                                            on                                                        
++ Add                         WebACL                        AWS::WAFv2::WebACL            N/A                         
+---------------------------------------------------------------------------------------------------------------------
+
+
+Changeset created successfully. arn:aws:cloudformation:us-west-2:521503643683:changeSet/samcli-deploy1755799829/3bbb4d6d-d4b4-4fb6-9b37-bd601cbec5b7
+
+
+Previewing CloudFormation changeset before deployment
+
+CloudFormation outputs from deployed stack
+---------------------------------------------------------------------------------------------------------------------
+Outputs                                                                                                             
+---------------------------------------------------------------------------------------------------------------------
+Key                 ApiBaseUrl                                                                                      
+Description         Base URL of the API                                                                             
+Value               https://rv0am18e5a.execute-api.us-west-2.amazonaws.com/prod                                     
+---------------------------------------------------------------------------------------------------------------------
+
+
+Successfully created/updated stack - steadystreak in us-west-2
+
+API="https://rv0am18e5a.execute-api.us-west-2.amazonaws.com/prod"
+curl "$API/nonce?purpose=request"
+
+# curl "$API/register" \
+#   -H 'X-AppAttest-KeyId: <key-id>' \
+#   -H 'X-AppAttest-Assertion: <assertion>' \
+#   -H 'X-Req-Nonce: <nonce>' \
+#   -H 'X-Req-Timestamp: <timestamp>'
+
+# curl "$API/protected" \ \
+#   -H 'X-AppAttest-KeyId: <key-id>' \
+#   -H 'X-AppAttest-Assertion: <assertion>' \
+#   -H 'X-Req-Nonce: <nonce>' \
+#   -H 'X-Req-Timestamp: <timestamp>' \
+#   -d '{}' \
+#   -H 'Content-Type: application/json'
+# ---------------------------------------------------------------------------------------------------------------------   
+# # SteadyStreak API
+# This API provides endpoints for nonce generation, app registration, and protected resource access using App Attest
+# assertions. It utilizes AWS services such as API Gateway, Lambda, DynamoDB, and WAF for security and scalability.     
+# # Endpoints
+# - **Nonce Generation**: `GET /nonce?purpose=request` - Generates a nonce for the specified purpose.
+# - **App Registration**: `POST /register` - Registers an app with the provided App Attest assertion and nonce.
+# - **Protected Resource Access**: `POST /protected` - Accesses a protected resource using App Attest assertion and nonce.
+# # Usage
+# 1. Deploy the API using AWS SAM.
+# 2. Use the provided API base URL to interact with the endpoints.  
+# 3. Generate a nonce for a specific purpose using the `/nonce` endpoint.   
+# 4. Register an app by providing the App Attest assertion and nonce using the `/register` endpoint.
+# 5. Access a protected resource using the App Attest assertion and nonce in the `/protected` endpoint.
+# # Security    
+# The API uses AWS WAF to enforce per-IP rate limits and protect against abuse. It also employs a Lambda Authorizer to validate App Attest assertions and nonces before granting access to protected resources.
+# # Requirements
+# - AWS account with permissions to deploy SAM applications.
+# - AWS SAM CLI installed.
+# - Node.js and npm installed for local development and testing.
+# # Deployment
+# 1. Clone the repository.
+# 2. Navigate to the project directory.
+# 3. Install dependencies using `npm install`.
+# 4. Build the application using `sam build --cached`.
+# 5. Deploy the application using `sam deploy --guided`.
+# # Testing
+# 1. Start the local API using `sam local start-api`.
+# 2. Make requests to the API using the provided API base URL.    
+# 3. Use the provided client code for iOS to test the API locally.
+# # Limitations
+# - The API uses AWS WAF to enforce per-IP rate limits and protect against abuse.
+# - The API also employs a Lambda Authorizer to validate App Attest assertions and nonces before granting access to protected resources.
+# # Future Enhancements
+# - Add support for other AWS services, such as Cognito for user management and DynamoDB for storage. 
+# - Implement additional security measures, such as multi-factor authentication and strong password policies.
+# - Integrate with external services, such as SNS for notifications and S3 for file storage.
+# # License   
+# This project is licensed under the Apache License, Version 2.0. See the [LICENSE](LICENSE) file for details.    
+# # Contributing
+# Contributions are welcome! Please submit a pull request or open an issue to discuss changes.    
+# # Acknowledgments
+# Special thanks to AWS for providing the necessary tools and services to build and deploy this API.  
+# # SteadyStreak API
+# This API provides endpoints for nonce generation, app registration, and protected resource access using App Attest
+# assertions. It utilizes AWS services such as API Gateway, Lambda, DynamoDB, and WAF for security and scalability.     

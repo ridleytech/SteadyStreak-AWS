@@ -1,0 +1,3 @@
+{
+  "body": "{\"keyId\":\"demo-key-123\",\"attestationObject\":\"dummyAttObj\",\"clientDataHashB64\":\"abcd1234\",\"publicKeyPem\":\"-----BEGIN PUBLIC KEY-----\\nMIIBIjANBg...\\n-----END PUBLIC KEY-----\"}"
+}
