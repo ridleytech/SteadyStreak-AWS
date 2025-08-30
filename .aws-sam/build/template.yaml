@@ -14,7 +14,7 @@ Globals:
           Ref: AppInstallsTable
         NONCES_TABLE:
           Ref: NoncesTable
-        OPENAI_API_KEY: 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
+        OPENAI_API_KEY: '{{resolve:secretsmanager:steadystreak/openai:SecretString}}'
   Api:
     EndpointConfiguration: REGIONAL
     TracingEnabled: true
