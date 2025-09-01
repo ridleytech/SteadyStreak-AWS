@@ -58,6 +58,27 @@ Resources:
       SSESpecification: { SSEEnabled: true }
       TableName: !Sub "${AWS::StackName}-Nonces"
 
+  UsersTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: SteadyStreakUsers
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+        - AttributeName: email
+          AttributeType: S
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: EmailIndex
+          KeySchema:
+            - AttributeName: email
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+
   ###### Lambdas (project root CodeUri) ######
   NonceFn:
     Type: AWS::Serverless::Function
@@ -97,6 +118,70 @@ Resources:
           TEAM_ID: "RR25B7NB9X"
           BUNDLE_ID: "com.ridleytech.SteadyStreak"
           ALLOW_DEV: "true" # set false in prod
+
+  UsersFn:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/
+      Handler: users.signup # default — we'll route all three methods below
+      Runtime: nodejs20.x
+      Timeout: 10
+      MemorySize: 256
+      Environment:
+        Variables:
+          TABLE_USERS: !Ref UsersTable
+          EMAIL_INDEX: EmailIndex
+          JWT_SECRET: YOUR_LONG_RANDOM_SECRET
+          REQUIRE_NONCE: "false" # set "true" to enforce nonce header
+          NONCE_TABLE: AttestNonces # or your existing nonce table name
+          CORS_ORIGIN: "*" # or your domain
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref UsersTable
+      Events:
+        # Signup
+        Signup:
+          Type: Api
+          Properties:
+            Path: /users/signup
+            Method: POST
+        # Login
+        Login:
+          Type: Api
+          Properties:
+            Path: /users/login
+            Method: POST
+        # Google
+        Google:
+          Type: Api
+          Properties:
+            Path: /users/google
+            Method: POST
+
+  SyncFn:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/
+      Handler: sync.handler
+      Runtime: nodejs20.x
+      Timeout: 10
+      MemorySize: 256
+      Environment:
+        Variables:
+          TABLE_USERS: !Ref UsersTable
+          JWT_SECRET: YOUR_LONG_RANDOM_SECRET
+          REQUIRE_NONCE: "false"
+          NONCE_TABLE: AttestNonces
+          CORS_ORIGIN: "*"
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref UsersTable
+      Events:
+        Sync:
+          Type: Api
+          Properties:
+            Path: /sync
+            Method: POST
 
   ProtectedFn:
     Type: AWS::Serverless::Function
