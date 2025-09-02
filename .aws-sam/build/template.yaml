@@ -25,7 +25,7 @@ Globals:
 Parameters:
   WafPerIpLimit:
     Type: Number
-    Default: 1000
+    Default: '1000'
     Description: Requests per 5-min window per IP (global rule)
   StageName:
     Type: String
@@ -62,6 +62,26 @@ Resources:
         SSEEnabled: true
       TableName:
         Fn::Sub: ${AWS::StackName}-Nonces
+  UsersTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: SteadyStreakUsers
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+      - AttributeName: userId
+        AttributeType: S
+      - AttributeName: email
+        AttributeType: S
+      KeySchema:
+      - AttributeName: userId
+        KeyType: HASH
+      GlobalSecondaryIndexes:
+      - IndexName: EmailIndex
+        KeySchema:
+        - AttributeName: email
+          KeyType: HASH
+        Projection:
+          ProjectionType: ALL
   NonceFn:
     Type: AWS::Serverless::Function
     Properties:
@@ -108,11 +128,94 @@ Resources:
           ALLOW_DEV: 'true'
     Metadata:
       SamResourceId: AuthorizerFn
+  UsersFn:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: UsersFn
+      Handler: users.signup
+      Runtime: nodejs20.x
+      Timeout: 10
+      MemorySize: 256
+      Environment:
+        Variables:
+          TABLE_USERS:
+            Ref: UsersTable
+          EMAIL_INDEX: EmailIndex
+          JWT_SECRET: YOUR_LONG_RANDOM_SECRET
+          REQUIRE_NONCE: 'false'
+          NONCE_TABLE: AttestNonces
+          CORS_ORIGIN: '*'
+      Policies:
+      - DynamoDBCrudPolicy:
+          TableName:
+            Ref: UsersTable
+      Events:
+        Signup:
+          Type: Api
+          Properties:
+            Path: /users/signup
+            Method: POST
+        Login:
+          Type: Api
+          Properties:
+            Path: /users/login
+            Method: POST
+        Google:
+          Type: Api
+          Properties:
+            Path: /users/google
+            Method: POST
+    Metadata:
+      SamResourceId: UsersFn
+  SyncFn:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: SyncFn
+      Handler: sync.handler
+      Runtime: nodejs20.x
+      Timeout: 10
+      MemorySize: 256
+      Environment:
+        Variables:
+          TABLE_USERS:
+            Ref: UsersTable
+          JWT_SECRET: YOUR_LONG_RANDOM_SECRET
+          REQUIRE_NONCE: 'false'
+          NONCE_TABLE: AttestNonces
+          CORS_ORIGIN: '*'
+      Policies:
+      - DynamoDBCrudPolicy:
+          TableName:
+            Ref: UsersTable
+      Events:
+        Sync:
+          Type: Api
+          Properties:
+            Path: /sync
+            Method: POST
+    Metadata:
+      SamResourceId: SyncFn
   ProtectedFn:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: ProtectedFn
       Handler: src/protected/index.handler
+      Events:
+        ProtectedGet:
+          Type: Api
+          Properties:
+            Path: /protected
+            Method: get
+        ProtectedPost:
+          Type: Api
+          Properties:
+            Path: /protected
+            Method: post
+        ProtectedPlan:
+          Type: Api
+          Properties:
+            Path: /protected/plan
+            Method: post
     Metadata:
       SamResourceId: ProtectedFn
   RestApi:
@@ -125,9 +228,64 @@ Resources:
       DefinitionBody:
         openapi: 3.0.1
         info:
-          title: App Attest API
+          title: SteadyStreak API
           version: '1.0'
         paths:
+          /users/signup:
+            post:
+              x-amazon-apigateway-integration:
+                httpMethod: POST
+                type: aws_proxy
+                uri:
+                  Fn::Sub: arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${UsersFn.Arn}/invocations
+              responses: {}
+          /users/login:
+            post:
+              x-amazon-apigateway-integration:
+                httpMethod: POST
+                type: aws_proxy
+                uri:
+                  Fn::Sub: arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${UsersFn.Arn}/invocations
+              responses: {}
+          /users/google:
+            post:
+              x-amazon-apigateway-integration:
+                httpMethod: POST
+                type: aws_proxy
+                uri:
+                  Fn::Sub: arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${UsersFn.Arn}/invocations
+              responses: {}
+          /sync:
+            post:
+              x-amazon-apigateway-integration:
+                httpMethod: POST
+                type: aws_proxy
+                uri:
+                  Fn::Sub: arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${SyncFn.Arn}/invocations
+              responses: {}
+          /protected:
+            get:
+              x-amazon-apigateway-integration:
+                httpMethod: GET
+                type: aws_proxy
+                uri:
+                  Fn::Sub: arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ProtectedFn.Arn}/invocations
+              responses: {}
+            post:
+              x-amazon-apigateway-integration:
+                httpMethod: POST
+                type: aws_proxy
+                uri:
+                  Fn::Sub: arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ProtectedFn.Arn}/invocations
+              responses: {}
+          /protected/plan:
+            post:
+              x-amazon-apigateway-integration:
+                httpMethod: POST
+                type: aws_proxy
+                uri:
+                  Fn::Sub: arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ProtectedFn.Arn}/invocations
+              responses: {}
           /nonce:
             get:
               x-amazon-apigateway-integration:
@@ -142,15 +300,6 @@ Resources:
                 httpMethod: POST
                 uri:
                   Fn::Sub: arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${RegisterFn.Arn}/invocations
-          /protected:
-            post:
-              security:
-              - AppAttestAuthorizer: []
-              x-amazon-apigateway-integration:
-                type: aws_proxy
-                httpMethod: POST
-                uri:
-                  Fn::Sub: arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ProtectedFn.Arn}/invocations
         components:
           securitySchemes:
             AppAttestAuthorizer:
@@ -200,6 +349,33 @@ Resources:
       Principal: apigateway.amazonaws.com
       SourceArn:
         Fn::Sub: arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${RestApi}/authorizers/*
+  PermUsersInvokeByApi:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName:
+        Ref: UsersFn
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn:
+        Fn::Sub: arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${RestApi}/*/*/users/*
+  PermSyncInvokeByApi:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName:
+        Ref: SyncFn
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn:
+        Fn::Sub: arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${RestApi}/*/*/sync
+  PermProtectedPlanInvokeByApi:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName:
+        Ref: ProtectedFn
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn:
+        Fn::Sub: arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${RestApi}/*/*/protected/plan
   WebACL:
     Type: AWS::WAFv2::WebACL
     Properties:

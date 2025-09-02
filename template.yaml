@@ -25,7 +25,7 @@ Globals:
 Parameters:
   WafPerIpLimit:
     Type: Number
-    Default: 1000
+    Default: '1000'  # Must be string for CloudFormation Number type
     Description: Requests per 5-min window per IP (global rule)
   StageName:
     Type: String
@@ -123,7 +123,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: src/
-      Handler: users.signup # default — we'll route all three methods below
+      Handler: users.signup
       Runtime: nodejs20.x
       Timeout: 10
       MemorySize: 256
@@ -132,26 +132,23 @@ Resources:
           TABLE_USERS: !Ref UsersTable
           EMAIL_INDEX: EmailIndex
           JWT_SECRET: YOUR_LONG_RANDOM_SECRET
-          REQUIRE_NONCE: "false" # set "true" to enforce nonce header
-          NONCE_TABLE: AttestNonces # or your existing nonce table name
-          CORS_ORIGIN: "*" # or your domain
+          REQUIRE_NONCE: "false"
+          NONCE_TABLE: AttestNonces
+          CORS_ORIGIN: "*"
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref UsersTable
       Events:
-        # Signup
         Signup:
           Type: Api
           Properties:
             Path: /users/signup
             Method: POST
-        # Login
         Login:
           Type: Api
           Properties:
             Path: /users/login
             Method: POST
-        # Google
         Google:
           Type: Api
           Properties:
@@ -188,6 +185,22 @@ Resources:
     Properties:
       CodeUri: .
       Handler: src/protected/index.handler
+      Events:
+        ProtectedGet:
+          Type: Api
+          Properties:
+            Path: /protected
+            Method: get
+        ProtectedPost:
+          Type: Api
+          Properties:
+            Path: /protected
+            Method: post
+        ProtectedPlan:
+          Type: Api
+          Properties:
+            Path: /protected/plan
+            Method: post
 
   ###### REST API (OpenAPI + REQUEST Lambda Authorizer) ######
   RestApi:
@@ -197,8 +210,65 @@ Resources:
       StageName: !Ref StageName
       DefinitionBody:
         openapi: 3.0.1
-        info: { title: App Attest API, version: "1.0" }
+        info: { title: "SteadyStreak API", version: "1.0" }
         paths:
+          # User Authentication
+          /users/signup:
+            post:
+              x-amazon-apigateway-integration:
+                httpMethod: POST
+                type: aws_proxy
+                uri: !Sub "arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${UsersFn.Arn}/invocations"
+              responses: {}
+          /users/login:
+            post:
+              x-amazon-apigateway-integration:
+                httpMethod: POST
+                type: aws_proxy
+                uri: !Sub "arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${UsersFn.Arn}/invocations"
+              responses: {}
+          /users/google:
+            post:
+              x-amazon-apigateway-integration:
+                httpMethod: POST
+                type: aws_proxy
+                uri: !Sub "arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${UsersFn.Arn}/invocations"
+              responses: {}
+          
+          # Sync Route
+          /sync:
+            post:
+              x-amazon-apigateway-integration:
+                httpMethod: POST
+                type: aws_proxy
+                uri: !Sub "arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${SyncFn.Arn}/invocations"
+              responses: {}
+          
+          # Protected Routes
+          /protected:
+            get:
+              x-amazon-apigateway-integration:
+                httpMethod: GET
+                type: aws_proxy
+                uri: !Sub "arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ProtectedFn.Arn}/invocations"
+              responses: {}
+            post:
+              x-amazon-apigateway-integration:
+                httpMethod: POST
+                type: aws_proxy
+                uri: !Sub "arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ProtectedFn.Arn}/invocations"
+              responses: {}
+          
+          # Macro/Plan Route
+          /protected/plan:
+            post:
+              x-amazon-apigateway-integration:
+                httpMethod: POST
+                type: aws_proxy
+                uri: !Sub "arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ProtectedFn.Arn}/invocations"
+              responses: {}
+          
+          # Existing Nonce Route
           /nonce:
             get:
               x-amazon-apigateway-integration:
@@ -213,15 +283,7 @@ Resources:
                 httpMethod: POST
                 uri:
                   Fn::Sub: arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${RegisterFn.Arn}/invocations
-          /protected:
-            post:
-              security:
-                - AppAttestAuthorizer: []
-              x-amazon-apigateway-integration:
-                type: aws_proxy
-                httpMethod: POST
-                uri:
-                  Fn::Sub: arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ProtectedFn.Arn}/invocations
+          # Protected route is already defined in the openapi paths section above
         components:
           securitySchemes:
             AppAttestAuthorizer:
@@ -268,6 +330,33 @@ Resources:
       Principal: apigateway.amazonaws.com
       SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${RestApi}/authorizers/*"
 
+  # Permissions for Users function (handles /users/* routes)
+  PermUsersInvokeByApi:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref UsersFn
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${RestApi}/*/*/users/*"
+
+  # Permissions for Sync function (handles /sync route)
+  PermSyncInvokeByApi:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref SyncFn
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${RestApi}/*/*/sync"
+
+  # Permissions for Protected function (handles /protected/plan route)
+  PermProtectedPlanInvokeByApi:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ProtectedFn
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${RestApi}/*/*/protected/plan"
+
   ###### WAFv2 (Regional) + association to API stage ######
   WebACL:
     Type: AWS::WAFv2::WebACL
@@ -284,7 +373,7 @@ Resources:
           Priority: 1
           Statement:
             RateBasedStatement:
-              Limit: !Ref WafPerIpLimit
+              Limit: !Ref WafPerIpLimit  # This is a string that will be converted to a number by CloudFormation
               AggregateKeyType: IP
           Action: { Block: {} }
           VisibilityConfig:
