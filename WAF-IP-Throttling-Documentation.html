@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SteadyStreak AWS Security Implementation</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        line-height: 1.6;
+        margin: 0;
+        padding: 20px;
+        color: #333;
+      }
+      .container {
+        max-width: 1000px;
+        margin: 0 auto;
+      }
+      h1,
+      h2,
+      h3 {
+        color: #2c3e50;
+      }
+      pre {
+        background-color: #f5f5f5;
+        padding: 15px;
+        border-radius: 5px;
+        overflow-x: auto;
+      }
+      code {
+        font-family: "Courier New", monospace;
+        background-color: #f5f5f5;
+        padding: 2px 5px;
+        border-radius: 3px;
+        font-size: 0.9em;
+      }
+      .note {
+        background-color: #e7f4ff;
+        border-left: 4px solid #4a90e2;
+        padding: 10px 15px;
+        margin: 15px 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>SteadyStreak AWS Security Implementation</h1>
+
+      <h2>WAF and IP Throttling Architecture</h2>
+
+      <h3>1. AWS WAFv2 Implementation</h3>
+      <p>
+        The application uses AWS WAFv2 (Web Application Firewall) in regional
+        mode to protect the API Gateway endpoints. The WAF is configured with
+        the following key components:
+      </p>
+
+      <h4>WebACL Configuration</h4>
+      <pre><code>WebACL:
+  Type: AWS::WAFv2::WebACL
+  Properties:
+    Name: !Sub "${AWS::StackName}-waf"
+    Scope: REGIONAL
+    DefaultAction: { Allow: {} }
+    VisibilityConfig:
+      CloudWatchMetricsEnabled: true
+      MetricName: waf-api
+      SampledRequestsEnabled: true</code></pre>
+
+      <h3>2. Rate Limiting Rules</h3>
+      <p>
+        The WAF implements two main rate limiting rules with different
+        priorities:
+      </p>
+
+      <h4>2.1 Global IP-based Rate Limit</h4>
+      <ul>
+        <li><strong>Rule Name:</strong> PerIpGlobalLimit</li>
+        <li><strong>Priority:</strong> 1 (evaluated first)</li>
+        <li>
+          <strong>Limit:</strong> Configurable via
+          <code>WafPerIpLimit</code> parameter (default: 1000 requests per 5
+          minutes per IP)
+        </li>
+        <li><strong>Scope:</strong> Applies to all requests</li>
+      </ul>
+      <pre><code>Rules:
+  - Name: PerIpGlobalLimit
+    Priority: 1
+    Statement:
+      RateBasedStatement:
+        Limit: !Ref WafPerIpLimit
+        AggregateKeyType: IP
+    Action: { Block: {} }</code></pre>
+
+      <h4>2.2 Protected Endpoint Rate Limit</h4>
+      <ul>
+        <li><strong>Rule Name:</strong> PerIpProtectedTight</li>
+        <li><strong>Priority:</strong> 2 (evaluated second)</li>
+        <li><strong>Limit:</strong> 300 requests per 5 minutes per IP</li>
+        <li>
+          <strong>Scope:</strong> Only applies to POST requests to the
+          "/protected" endpoint
+        </li>
+      </ul>
+      <pre><code>- Name: PerIpProtectedTight
+  Priority: 2
+  Statement:
+    RateBasedStatement:
+      Limit: 300
+      AggregateKeyType: IP
+      ScopeDownStatement:
+        AndStatement:
+          Statements:
+            - ByteMatchStatement:
+                FieldToMatch: { UriPath: {} }
+                PositionalConstraint: EXACTLY
+                SearchString: "/protected"
+                TextTransformations: [{ Priority: 0, Type: NONE }]
+            - ByteMatchStatement:
+                FieldToMatch: { Method: {} }
+                PositionalConstraint: EXACTLY
+                SearchString: "POST"
+                TextTransformations: [{ Priority: 0, Type: NONE }]</code></pre>
+
+      <h3>3. WAF Association with API Gateway</h3>
+      <p>
+        The WAF is associated with the API Gateway stage to protect all incoming
+        requests:
+      </p>
+      <pre><code>WebACLAssociation:
+  Type: AWS::WAFv2::WebACLAssociation
+  Properties:
+    ResourceArn: !Sub "arn:aws:apigateway:${AWS::Region}::/restapis/${RestApi}/stages/${StageName}"
+    WebACLArn: !GetAtt WebACL.Arn</code></pre>
+
+      <h3>4. Configuration and Deployment</h3>
+      <p>
+        The WAF configuration is deployed using AWS SAM (Serverless Application
+        Model) with the following key parameters:
+      </p>
+      <ul>
+        <li>
+          <code>WafPerIpLimit</code>: Configurable parameter for the global rate
+          limit (default: 1000)
+        </li>
+        <li>
+          <code>StageName</code>: The API Gateway stage name (e.g., "prod")
+        </li>
+      </ul>
+      <p>Example deployment configuration from <code>samconfig.toml</code>:</p>
+      <pre><code>parameter_overrides = "WafPerIpLimit=\"300\" StageName=\"prod\""</code></pre>
+
+      <h3>5. Monitoring and Visibility</h3>
+      <p>
+        The WAF is configured with CloudWatch metrics and request sampling for
+        monitoring:
+      </p>
+      <ul>
+        <li>CloudWatch Metrics enabled for all rules</li>
+        <li>Sampled request logging enabled</li>
+        <li>Custom metric names for each rule for easy identification</li>
+      </ul>
+
+      <div class="note">
+        <h4>Key Security Benefits</h4>
+        <ul>
+          <li>Protection against DDoS attacks through rate limiting</li>
+          <li>Granular control over different endpoints with custom limits</li>
+          <li>Real-time monitoring and logging capabilities</li>
+          <li>Infrastructure-as-Code approach using AWS SAM</li>
+          <li>Configurable parameters for different environments</li>
+        </ul>
+      </div>
+    </div>
+  </body>
+</html>

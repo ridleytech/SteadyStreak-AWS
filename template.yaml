@@ -30,6 +30,11 @@ Parameters:
   StageName:
     Type: String
     Default: prod
+  IsLocal:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+    Description: Set to 'true' when running locally with SAM CLI
 
 Resources:
   ###### DynamoDB tables ######
@@ -122,8 +127,8 @@ Resources:
   UsersFn:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: src/
-      Handler: users.signup
+      CodeUri: .
+      Handler: src/users/users.handler
       Runtime: nodejs20.x
       Timeout: 10
       MemorySize: 256
@@ -131,10 +136,14 @@ Resources:
         Variables:
           TABLE_USERS: !Ref UsersTable
           EMAIL_INDEX: EmailIndex
-          JWT_SECRET: YOUR_LONG_RANDOM_SECRET
-          REQUIRE_NONCE: "false"
-          NONCE_TABLE: AttestNonces
+          JWT_SECRET: !If [IsLocal, "YOUR_LOCAL_DEV_SECRET", !Sub "{{resolve:secretsmanager:steadystreak/jwt-secret:SecretString}}"]
           CORS_ORIGIN: "*"
+          AWS_REGION: !If [IsLocal, "us-west-2", !Ref AWS::Region]
+          DYNAMODB_LOCAL: !If [IsLocal, "true", "false"]
+          DYNAMODB_ENDPOINT: !If [IsLocal, "http://host.docker.internal:8000", ""]
+          DYNAMODB_LOCAL_ENDPOINT: !If [IsLocal, "http://host.docker.internal:8000", ""]
+          DYNAMODB_ENDPOINT_URL: !If [IsLocal, "http://host.docker.internal:8000", ""]
+          NODE_ENV: !If [IsLocal, "development", "production"]
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref UsersTable
@@ -158,8 +167,8 @@ Resources:
   SyncFn:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: src/
-      Handler: sync.handler
+      CodeUri: .
+      Handler: src/users/sync.handler
       Runtime: nodejs20.x
       Timeout: 10
       MemorySize: 256

@@ -7,15 +7,6 @@ architecture = "x86_64"
 handler = "src/nonce/index.handler"
 manifest_hash = ""
 packagetype = "Zip"
-functions = ["NonceFn", "RegisterFn", "AuthorizerFn", "ProtectedFn"]
-
-[function_build_definitions.d841bc66-2dce-4983-a22d-3faeb2f79c00]
-codeuri = "/Users/rr/Documents/Code/Node Projects/AWS/SteadyStreak-AWS/src"
-runtime = "nodejs20.x"
-architecture = "x86_64"
-handler = "users.signup"
-manifest_hash = ""
-packagetype = "Zip"
-functions = ["UsersFn", "SyncFn"]
+functions = ["NonceFn", "RegisterFn", "AuthorizerFn", "UsersFn", "SyncFn", "ProtectedFn"]
 
 [layer_build_definitions]

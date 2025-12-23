@@ -3,7 +3,22 @@ import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient, UpdateCommand } from "@aws-sdk/lib-dynamodb";
 import jwt from "jsonwebtoken";
 
-const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({}));
+// Configure DynamoDB client with local endpoint if available
+const dynamoDbConfig = {
+  region: process.env.AWS_REGION || 'us-west-2',
+};
+
+// Use local DynamoDB endpoint if available
+if (process.env.DYNAMODB_LOCAL_ENDPOINT) {
+  dynamoDbConfig.endpoint = process.env.DYNAMODB_LOCAL_ENDPOINT;
+  dynamoDbConfig.sslEnabled = false;
+  dynamoDbConfig.credentials = {
+    accessKeyId: 'local',
+    secretAccessKey: 'local',
+  };
+}
+
+const ddb = DynamoDBDocumentClient.from(new DynamoDBClient(dynamoDbConfig));
 
 const TABLE = process.env.TABLE_USERS;
 const JWT_SECRET = process.env.JWT_SECRET;

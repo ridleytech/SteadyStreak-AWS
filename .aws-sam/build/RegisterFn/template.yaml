@@ -122,8 +122,8 @@ Resources:
   UsersFn:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: src/
-      Handler: users.signup
+      CodeUri: .
+      Handler: src/users/users.signup
       Runtime: nodejs20.x
       Timeout: 10
       MemorySize: 256
@@ -158,8 +158,8 @@ Resources:
   SyncFn:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: src/
-      Handler: sync.handler
+      CodeUri: .
+      Handler: src/users/sync.handler
       Runtime: nodejs20.x
       Timeout: 10
       MemorySize: 256
